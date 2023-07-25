@@ -1,0 +1,50 @@
+#!/bin/sh -e
+#
+# Activate OpenThread on Variscite VAR-SOM-MX93
+#
+
+. /etc/gpiochip
+
+gpio4=$(get_gpiochip "43830080.gpio")
+
+SPI_DEV="/dev/spidev1.0"
+SPI_MODE="0"
+SPI_SPEED="1000000"
+SPI_RESET_DELAY="500"
+
+GPIO_DEV_RESET="/dev/${gpio4}"
+GPIO_LINE_RESET="15"
+GPIO_DEV_INT="/dev/${gpio4}"
+GPIO_LINE_INT="29"
+
+echo "GPIO INT: ${GPIO_DEV_INT} ${GPIO_LINE_INT}"
+echo "GPIO RESET: ${GPIO_DEV_RESET} ${GPIO_LINE_RESET}"
+
+# Start OpenThread
+ot_start()
+{
+	URL="spinel+spi://${SPI_DEV}?gpio-int-device=${GPIO_DEV_INT}&gpio-int-line=${GPIO_LINE_INT}&gpio-reset-device=${GPIO_DEV_RESET}&gpio-reset-line=${GPIO_LINE_RESET}&spi-mode=${SPI_MODE}&spi-speed=${SPI_SPEED}&spi-reset-delay=${SPI_RESET_DELAY}&"
+	echo "${URL}"
+	./ot-daemon "${URL}"
+}
+
+# Stop OpenThread
+ot_stop()
+{
+	killall ot-daemon
+}
+
+###########################
+#  Execution starts here  #
+###########################
+case $1 in
+
+start)
+	ot_start
+	;;
+stop)
+	ot_stop
+	;;
+esac
+
+exit 0

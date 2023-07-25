@@ -1,0 +1,14 @@
+[Unit]
+Description=Variscite OpenThread setup service
+Before=network.target
+After=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/etc/openthread/variscite-ot start
+ExecStop=/etc/openthread/variscite-ot stop
+
+[Install]
+WantedBy=network.target
+
