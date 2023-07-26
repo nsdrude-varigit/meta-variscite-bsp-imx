@@ -1,17 +1,30 @@
 #!/bin/sh -e
 #
-# Activate Bluetooth on Variscite VAR-SOM-MX93
+# Activate Bluetooth on Variscite DART-MX8M-PLUS/VAR-SOM-MX8M-PLUS
 #
 
-. /etc/gpiochip
+# Include common functions
+. /etc/wifi/variscite-wireless
 
-gpio4=$(get_gpiochip "43830080.gpio")
+# GPIO pin to enable BT module on DART-MX8M-PLUS
+BT_EN_GPIO_DART="gpiochip1 6"
 
-# GPIO pin to enable BT module
-BT_EN_GPIO="${gpio4} 15"
+# GPIO pin to enable BT module on VAR-SOM-MX8M-PLUS
+BT_EN_GPIO_SOM="gpiochip1 9"
 
-# UART device connected to BT module on VAR-SOM-MX93
-BT_TTY_DEV_SOM="/dev/ttyLP4"
+# GPIO pin to control routing of UART signals
+# to BT module or SOM connector on DART-MX8M-PLUS
+BT_BUF_GPIO_DART="gpiochip1 9"
+
+# GPIO pin to control routing of UART signals
+# to BT module or SOM connector on VAR-SOM-MX8M-PLUS
+BT_BUF_GPIO_SOM="gpiochip0 4"
+
+# UART device connected to BT module on DART-MX8M-PLUS
+BT_TTY_DEV_DART=/dev/ttymxc3
+
+# UART device connected to BT module on VAR-SOM-MX8M-PLUS
+BT_TTY_DEV_SOM=/dev/ttymxc2
 
 # Sterling LWB BT firmware
 BT_FIRMWARE_LWB=/lib/firmware/brcm/BCM43430A1.hcd
@@ -24,6 +37,12 @@ WIFI_5G_SDIO_ID=0x4339
 
 # WIFI SDIO ID file
 WIFI_SDIO_ID_FILE=/sys/class/net/wlan0/device/device
+
+# Return true if SOM is VAR-SOM-MX8M-PLUS
+som_is_var_som_mx8m_plus()
+{
+	grep -q VAR-SOM-MX8M-PLUS /sys/devices/soc0/machine
+}
 
 # Set BT firmware based on WIFI SDIO ID
 bt_set_firmware()
@@ -39,22 +58,15 @@ bt_set_firmware()
 # Set UART device connected to BT module
 bt_set_uart()
 {
-	BT_TTY_DEV=${BT_TTY_DEV_SOM}
-}
-
-# Check if WIFI+BT combo module is available
-bt_found()
-{
-	# Check that WIFI HW was initialized succesfully
-	for i in $(seq 1 5); do
-		if [ -f ${WIFI_SDIO_ID_FILE} ]; then
-			return 0
-		else
-			sleep 1
-		fi
-	done
-
-	return 1
+	if som_is_var_som_mx8m_plus; then
+		BT_TTY_DEV=${BT_TTY_DEV_SOM}
+		BT_EN_GPIO=${BT_EN_GPIO_SOM}
+		BT_BUF_GPIO=${BT_BUF_GPIO_SOM}
+	else
+		BT_TTY_DEV=${BT_TTY_DEV_DART}
+		BT_EN_GPIO=${BT_EN_GPIO_DART}
+		BT_BUF_GPIO=${BT_BUF_GPIO_DART}
+	fi
 }
 
 # Enable BT via GPIO(s)
@@ -64,22 +76,25 @@ bt_enable()
 	gpioset ${BT_EN_GPIO}=0
 	sleep 1
 	gpioset ${BT_EN_GPIO}=1
+
+	# Route UART lines to BT module
+	gpioset ${BT_BUF_GPIO}=0
 }
 
 # Start BT hardware
 bt_start()
 {
 	# Exit if BT module is not available
-	bt_found || exit 0
+	wifi_sdio_exist ${WIFI_SDIO_ID_FILE} || exit 0
+
+	# Set BT UART
+	bt_set_uart
 
 	# Enable BT hardware
 	bt_enable
 
-	# Set BT firmware file 
+	# Set BT firmware file
 	bt_set_firmware
-
-	# Set BT UART
-	bt_set_uart
 
     	# Start BT firmware loading service
     	kill -9 $(pidof brcm_patchram_plus) 2>/dev/null || true
@@ -106,6 +121,9 @@ bt_stop()
 
 	# Stop BT firmware loading service
 	kill -9 $(pidof brcm_patchram_plus) 2>/dev/null || true
+
+	# Route UART lines to SOM connector
+	gpioset ${BT_BUF_GPIO}=1
 
   	# Power down BT module
 	gpioset ${BT_EN_GPIO}=0

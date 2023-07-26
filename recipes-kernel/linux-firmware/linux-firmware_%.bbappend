@@ -4,6 +4,11 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 SRCREV_FORMAT = "linux-firmware"
 
+# NXP IW612 Firmware
+IMX_FIRMWARE_SRC:var-som = "git://github.com/nsdrude-varigit/imx-firmware.git;protocol=https"
+SRCBRANCH_imx-firmware:append:var-som = "-var01"
+SRCREV_imx-firmware:var-som = "5636891a5e592ecd2a5d3f479fc85496b6b0d70c"
+
 BRCM_REV = "10.54.0.13"
 SRC_URI[brcm_lwb.sha256sum] = "8faa105e036a9f8bffe2857f5d9f5ce539521ef8624b59069290579440228ac5"
 SRC_URI[brcm_lwb5.sha256sum] = "583e2b328a185f545e1c5de55acaf3ae092cdbc791a62ff005c5559515488f7f"

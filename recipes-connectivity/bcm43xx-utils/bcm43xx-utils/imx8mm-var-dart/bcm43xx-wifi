@@ -1,7 +1,10 @@
 #!/bin/sh -e
 #
-# Activate WIFI on Variscite VAR-SOM-MX8M-NANO
+# Activate WIFI on Variscite DART-MX8M-MINI/VAR-SOM-MX8M-MINI
 #
+
+# Include common functions
+. /etc/wifi/variscite-wireless
 
 # GPIO pin to supply 3.3V WIFI voltage
 WIFI_3V3_GPIO="gpiochip1 7"
@@ -15,53 +18,36 @@ WIFI_EN_GPIO="gpiochip1 10"
 # GPIO pin to enable BT module
 BT_EN_GPIO="gpiochip1 6"
 
+# GPIO pin to control routing of UART signals
+# to BT module or SOM connector on DART-MX8M-MINI
+BT_BUF_GPIO="gpiochip4 5"
+
 # WIFI MMC host
 WIFI_MMC_HOST=30b40000.mmc
+WIFI_MMC_PATH="/sys/bus/platform/drivers/sdhci-esdhc-imx"
 
-# Return true if WIFI interface exists
-wifi_interface_exists()
+# Return true if board is DART-MX8M-MINI
+som_is_dart_mx8m_mini()
 {
-	for i in $(seq 1 20); do
-		if [ -d /sys/class/net/wlan0 ]; then
-			return 0
-		else
-			sleep 1
-		fi
-	done
-
-	return 1
-}
-
-# Bind WIFI device to MMC controller
-wifi_mmc_bind()
-{
-	if [ -e /sys/bus/platform/drivers/sdhci-esdhc-imx/bind ]; then
-		echo ${WIFI_MMC_HOST} > /sys/bus/platform/drivers/sdhci-esdhc-imx/bind
-	fi
-}
-
-# Unbind WIFI device from MMC controller
-wifi_mmc_unbind()
-{
-	if [ -e /sys/bus/platform/drivers/sdhci-esdhc-imx/${WIFI_MMC_HOST} ]; then
-		echo ${WIFI_MMC_HOST} > /sys/bus/platform/drivers/sdhci-esdhc-imx/unbind
-	fi
+	grep -q DART-MX8M-MINI /sys/devices/soc0/machine
 }
 
 # Power up WIFI chip
 wifi_up()
 {
 	# Unbind WIFI device from MMC controller
-	wifi_mmc_unbind
+	wifi_mmc_unbind ${WIFI_MMC_PATH} ${WIFI_MMC_HOST}
 
 	# WIFI_3V3 up
 	gpioset ${WIFI_3V3_GPIO}=1
 	usleep 10000
 
 	# WIFI_1V8 up
-	gpioset ${WIFI_1V8_GPIO}=1
-
-	# Wait at least 10ms
+	if som_is_dart_mx8m_mini; then
+		gpioset ${WIFI_1V8_GPIO}=0
+	else
+		gpioset ${WIFI_1V8_GPIO}=1
+	fi
 	usleep 10000
 
 	# WLAN_EN up
@@ -70,14 +56,22 @@ wifi_up()
 	# BT_EN up
 	gpioset ${BT_EN_GPIO}=1
 
-	# Wait at least 150ms
-	usleep 200000
+	if som_is_dart_mx8m_mini; then
+		# BT_BUF up
+		gpioset ${BT_BUF_GPIO}=0
+
+		# Wait at least 150ms
+		usleep 200000
+
+		# BT_BUF down
+		gpioset ${BT_BUF_GPIO}=1
+	fi
 
 	# BT_EN down
 	gpioset ${BT_EN_GPIO}=0
 
 	# Bind WIFI device to MMC controller
-	wifi_mmc_bind
+	wifi_mmc_bind ${WIFI_MMC_PATH} ${WIFI_MMC_HOST}
 
 	# Load WIFI driver
 	modprobe brcmfmac
@@ -90,17 +84,26 @@ wifi_down()
 	modprobe -r brcmfmac
 
 	# Unbind WIFI device from MMC controller
-	wifi_mmc_unbind
+	wifi_mmc_unbind ${WIFI_MMC_PATH} ${WIFI_MMC_HOST}
 
 	# WIFI_EN down
 	gpioset ${WIFI_EN_GPIO}=0
+
+	# BT_BUF down
+	if som_is_dart_mx8m_mini; then
+		gpioset ${BT_BUF_GPIO}=1
+	fi
 
 	# BT_EN down
 	gpioset ${BT_EN_GPIO}=0
 	usleep 10000
 
 	# WIFI_1V8 down
-	gpioset ${WIFI_1V8_GPIO}=0
+	if som_is_dart_mx8m_mini; then
+		gpioset ${WIFI_1V8_GPIO}=1
+	else
+		gpioset ${WIFI_1V8_GPIO}=0
+	fi
 
 	# WIFI_3V3 down
 	gpioset ${WIFI_3V3_GPIO}=0
@@ -157,7 +160,7 @@ wifi_start()
 		wifi_up
 
 		# Exit if WIFI interface exists
-		wifi_interface_exists && exit 0
+		wifi_interface_exists "wlan0" && exit 0
 
 		# Down WIFI
 		wifi_down

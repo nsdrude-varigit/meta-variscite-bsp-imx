@@ -1,20 +1,16 @@
 #!/bin/sh -e
 #
-# Activate Bluetooth on Variscite DART-MX8M-MINI/VAR-SOM-MX8M-MINI
+# Activate Bluetooth on Variscite VAR-SOM-MX7
 #
 
+# Include common functions
+. /etc/wifi/variscite-wireless
+
 # GPIO pin to enable BT module
-BT_EN_GPIO="gpiochip1 6"
+BT_EN_GPIO="gpiochip0 14"
 
-# GPIO pin to control routing of UART signals 
-# to BT module or SOM connector on DART-MX8M-MINI
-BT_BUF_GPIO="gpiochip4 5"
-
-# UART device connected to BT module on DART-MX8M-MINI
-BT_TTY_DEV_DART=/dev/ttymxc3
-
-# UART device connected to BT module on VAR-SOM-MX8M-MINI
-BT_TTY_DEV_SOM=/dev/ttymxc1
+# UART device connected to BT module
+BT_TTY_DEV=/dev/ttymxc2
 
 # Sterling LWB BT firmware
 BT_FIRMWARE_LWB=/lib/firmware/brcm/BCM43430A1.hcd
@@ -28,10 +24,16 @@ WIFI_5G_SDIO_ID=0x4339
 # WIFI SDIO ID file
 WIFI_SDIO_ID_FILE=/sys/class/net/wlan0/device/device
 
-# Return true if SOM is VAR-SOM-MX8M-MINI
-som_is_var_som_mx8m_mini()
+# Set BT MAC address
+bt_set_macaddr()
 {
-	grep -q VAR-SOM-MX8M-MINI /sys/devices/soc0/machine
+  eth0_addr=$(cat /sys/class/net/eth0/address | sed 's/\://g')
+  eth1_addr=$(cat /sys/class/net/eth1/address | sed 's/\://g')
+  bt_addr=$(max $eth0_addr $eth1_addr)
+  bt_addr=$((0x$bt_addr+1))
+  bt_addr=$(printf '%012X' $bt_addr)
+
+  BT_MACADDR=$(echo $bt_addr | sed 's/\(..\)/\1:/g;s/:$//')
 }
 
 # Set BT firmware based on WIFI SDIO ID
@@ -45,31 +47,6 @@ bt_set_firmware()
 	fi
 }
 
-# Set UART device connected to BT module
-bt_set_uart()
-{
-	if som_is_var_som_mx8m_mini; then
-		BT_TTY_DEV=${BT_TTY_DEV_SOM}
-	else
-		BT_TTY_DEV=${BT_TTY_DEV_DART}
-	fi
-}
-
-# Check if WIFI+BT combo module is available
-bt_found()
-{
-	# Check that WIFI HW was initialized succesfully
-	for i in $(seq 1 5); do
-		if [ -f ${WIFI_SDIO_ID_FILE} ]; then
-			return 0
-		else
-			sleep 1
-		fi
-	done
-
-	return 1
-}
-
 # Enable BT via GPIO(s)
 bt_enable()
 {
@@ -77,19 +54,13 @@ bt_enable()
 	gpioset ${BT_EN_GPIO}=0
 	sleep 1
 	gpioset ${BT_EN_GPIO}=1
-
-	# VAR-SOM-MX8M-MINI has no BT_BUF_GPIO pin
-	som_is_var_som_mx8m_mini && return
-
-	# Route UART lines to BT module
-	gpioset ${BT_BUF_GPIO}=0
 }
 
 # Start BT hardware
 bt_start()
 {
 	# Exit if BT module is not available
-	bt_found || exit 0
+	wifi_sdio_exist ${WIFI_SDIO_ID_FILE} || exit 0
 
 	# Enable BT hardware
 	bt_enable
@@ -97,14 +68,15 @@ bt_start()
 	# Set BT firmware file 
 	bt_set_firmware
 
-	# Set BT UART
-	bt_set_uart
+	# Set BT MAC addresss
+	bt_set_macaddr
 
-    	# Start BT firmware loading service
-    	kill -9 $(pidof brcm_patchram_plus) 2>/dev/null || true
+	# Start BT firmware loading service
+	kill -9 $(pidof brcm_patchram_plus) 2>/dev/null || true
 	brcm_patchram_plus \
 			--patchram ${BT_FIRMWARE} \
 			--enable_hci \
+			--bd_addr ${BT_MACADDR} \
 			--no2bytes \
 			--baudrate 3000000 \
 			--scopcm=1,0,0,0,0,0,0,0,0,0 \
@@ -117,19 +89,11 @@ bt_stop()
 	# Exit if BT interface is not available
 	[ -e /sys/class/bluetooth/hci0 ] || exit 0
 
-	# Set BT UART
-	bt_set_uart
-
 	# Stop BT interface
 	hciconfig hci0 down
 
 	# Stop BT firmware loading service
 	kill -9 $(pidof brcm_patchram_plus) 2>/dev/null || true
-
-	# Route UART lines to SOM connector
-	if ! som_is_var_som_mx8m_mini; then
-		gpioset ${BT_BUF_GPIO}=1
-	fi
 
   	# Power down BT module
 	gpioset ${BT_EN_GPIO}=0
