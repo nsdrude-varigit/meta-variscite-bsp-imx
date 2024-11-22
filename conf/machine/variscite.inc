@@ -99,3 +99,8 @@ DISTRO_FEATURES_BACKFILL_CONSIDERED:append = "${@bb.utils.contains('DISTRO_FEATU
 
 # Use bluez-alsa instead of pulseaudio
 DISTRO_FEATURES_BACKFILL_CONSIDERED:append = " pulseaudio"
+
+# Fix default branch names to workaround renamed default branches
+INHERIT += "replace_default_branch_name_handler"
+
+REPLACE_DEFAULT_BRANCH_LIST = "${LAYERDIR}/conf/machine/variscite-default-branch-list.conf"
