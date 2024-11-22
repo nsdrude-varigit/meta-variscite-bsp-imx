@@ -27,18 +27,36 @@
 ## releases whenever possible.
 
 python replace_default_branch_name () {
-    recipe_list_to_rework = d.getVar('REPLACE_DEFAULT_BRANCH_LIST', True)
-    
-    if not recipe_list_to_rework:
-        bb.debug(1, "Variscite List handler: REPLACE_DEFAULT_BRANCH_LIST is not set.")
-        return
+    try:
+        recipe_list_to_rework = d.getVar('REPLACE_DEFAULT_BRANCH_LIST', True)
 
-    with open(recipe_list_to_rework, 'r') as recipe_list_to_rework_fd:
-        for line in recipe_list_to_rework_fd.readlines():
-            recipe_name, old_urival, new_urival = line.split()
-            if recipe_name in d.getVar('PN'):
-                src_uri_replaced = d.getVar('SRC_URI').replace(f"{old_urival}", f"{new_urival}")
-                d.setVar('SRC_URI', src_uri_replaced)
+        if not recipe_list_to_rework:
+            bb.warn("Variscite List handler: REPLACE_DEFAULT_BRANCH_LIST is not set or empty.")
+            return
+
+        try:
+            with open(recipe_list_to_rework, 'r') as recipe_list_to_rework_fd:
+                for line_number, line in enumerate(recipe_list_to_rework_fd.readlines(), start=1):
+                    try:
+                        recipe_name, old_urival, new_urival = line.split()
+                    except ValueError as e:
+                        bb.fatal(f"Malformed line in {recipe_list_to_rework} at line {line_number}: {line.strip()}. Error: {e}")
+                        continue
+
+                    if recipe_name in d.getVar('PN'):
+                        src_uri = d.getVar('SRC_URI')
+                        if old_urival in src_uri:
+                            src_uri_replaced = src_uri.replace(f"{old_urival}", f"{new_urival}")
+                            d.setVar('SRC_URI', src_uri_replaced)
+                        else:
+                            bb.warn(f"Old URI '{old_urival}' not found in SRC_URI for recipe {recipe_name}.")
+        except FileNotFoundError as e:
+            bb.fatal(f"File {recipe_list_to_rework} not found. Ensure the file exists and is accessible. Error: {e}")
+        except IOError as e:
+            bb.fatal(f"Failed to read file {recipe_list_to_rework}. Error: {e}")
+
+    except Exception as e:
+        bb.fatal(f"An unexpected error occurred in replace_default_branch_name: {e}")
 }
 
 replace_default_branch_name[eventmask] = "bb.event.RecipePreFinalise"
