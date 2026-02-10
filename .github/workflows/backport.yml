@@ -3,8 +3,16 @@ name: Backport labeled merged pull requests
 on:
   pull_request_target:
     types: [closed]
-  issue_comment:
-    types: [created]
+  workflow_dispatch:
+    inputs:
+      source_pr_number:
+        description: "PR number to backport"
+        required: true
+        type: string
+      target_branches:
+        description: "Space-delimited target branches"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -14,19 +22,14 @@ jobs:
   backport:
     name: Create backport PRs
     runs-on: ubuntu-latest
-    # Run on merge, or on manual /backport comment after merge.
-    # Guard against backport-action bot comments retriggering the workflow.
+    # Run on merge, or via manual dispatch.
     if: >
-      (
-        github.event_name == 'pull_request_target' &&
-        github.event.pull_request.merged
-      ) || (
-        github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request &&
-        github.event.comment.user.id != 97796249 &&
-        startsWith(github.event.comment.body, '/backport')
-      )
+      (github.event_name == 'pull_request_target' && github.event.pull_request.merged) ||
+      (github.event_name == 'workflow_dispatch')
     steps:
       - uses: actions/checkout@v4
       - name: Create backport PRs
         uses: korthout/backport-action@v4
+        with:
+          source_pr_number: ${{ inputs.source_pr_number }}
+          target_branches: ${{ inputs.target_branches }}
